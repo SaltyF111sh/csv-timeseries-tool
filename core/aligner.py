@@ -178,42 +178,13 @@ def merge_files(
     # 5. 水平拼接
     result = pd.concat(aligned, axis=1)
 
-    # 6. 按列数据去重：对比每列前10行，完全相同的列仅保留第一次出现的
-    result = _dedup_columns_by_data(result, n=10)
+    # 6. 跨文件列名去重：同名列只保留首次出现的
+    result = result.loc[:, ~result.columns.duplicated()]
 
     # 7. 按时间排序
     result = result.sort_index()
 
     return result
-
-
-def _dedup_columns_by_data(df: pd.DataFrame, n: int = 10) -> pd.DataFrame:
-    """按列数据去重：前 n 行完全相同的列，仅保留第一次出现的。
-
-    两列 NaN 位置相同视为相等，避免将不同缺失模式误判为相同。
-    """
-    cols = df.columns.tolist()
-    if len(cols) <= 1:
-        return df
-
-    drop_cols: list[str] = []
-    preview = df.head(n)
-
-    for i in range(len(cols)):
-        if cols[i] in drop_cols:
-            continue
-        for j in range(i + 1, len(cols)):
-            if cols[j] in drop_cols:
-                continue
-            si = preview[cols[i]].reset_index(drop=True)
-            sj = preview[cols[j]].reset_index(drop=True)
-            if si.equals(sj):
-                drop_cols.append(cols[j])
-
-    if drop_cols:
-        df = df.drop(columns=drop_cols)
-
-    return df
 
 
 def compute_intersection_info(
