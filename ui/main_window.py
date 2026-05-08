@@ -469,6 +469,15 @@ class MainWindow(QWidget):
                     s.alias = matched
                     matched_originals.add(s.original)
 
+        # 3.6 去重：不同原名映射到相同目标名时，仅保留第一个勾选
+        seen_aliases: dict[str, int] = {}
+        for i, s in enumerate(states):
+            alias = s.alias
+            if alias in seen_aliases:
+                s.checked = False
+            else:
+                seen_aliases[alias] = i
+
         # 4. 重建列列表 UI
         self._rebuild_column_list(states, matched_originals)
 

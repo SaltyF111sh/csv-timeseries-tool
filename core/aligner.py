@@ -102,12 +102,20 @@ def load_file_for_alignment(
 
     df = df[keep_cols].copy()
 
-    # 应用重命名
-    rename_map: dict[str, str] = {
-        s.original: (s.alias or s.original)
-        for s in states
-        if s.original in keep_cols
-    }
+    # 应用重命名（去重：同一目标名只保留首次出现的列）
+    rename_map: dict[str, str] = {}
+    seen_renamed: set[str] = set()
+    for s in states:
+        if s.original not in keep_cols:
+            continue
+        new_name = s.alias or s.original
+        if new_name in seen_renamed:
+            # 重名列：跳过，不保留
+            keep_cols.remove(s.original)
+            continue
+        rename_map[s.original] = new_name
+        seen_renamed.add(new_name)
+    df = df[keep_cols].copy() if keep_cols != df.columns.tolist() else df
     df = df.rename(columns=rename_map)
 
     # 时间列转 datetime 并设为 index
@@ -170,10 +178,42 @@ def merge_files(
     # 5. 水平拼接
     result = pd.concat(aligned, axis=1)
 
-    # 6. 按时间排序
+    # 6. 按列数据去重：对比每列前10行，完全相同的列仅保留第一次出现的
+    result = _dedup_columns_by_data(result, n=10)
+
+    # 7. 按时间排序
     result = result.sort_index()
 
     return result
+
+
+def _dedup_columns_by_data(df: pd.DataFrame, n: int = 10) -> pd.DataFrame:
+    """按列数据去重：前 n 行完全相同的列，仅保留第一次出现的。
+
+    两列 NaN 位置相同视为相等，避免将不同缺失模式误判为相同。
+    """
+    cols = df.columns.tolist()
+    if len(cols) <= 1:
+        return df
+
+    drop_cols: list[str] = []
+    preview = df.head(n)
+
+    for i in range(len(cols)):
+        if cols[i] in drop_cols:
+            continue
+        for j in range(i + 1, len(cols)):
+            if cols[j] in drop_cols:
+                continue
+            si = preview[cols[i]].reset_index(drop=True)
+            sj = preview[cols[j]].reset_index(drop=True)
+            if si.equals(sj):
+                drop_cols.append(cols[j])
+
+    if drop_cols:
+        df = df.drop(columns=drop_cols)
+
+    return df
 
 
 def compute_intersection_info(
